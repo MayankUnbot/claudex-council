@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.1] - 2026-05-01
+
+### Fixed
+- **Workers no longer ask for information their tools could discover.**
+  v0.7.0 gave Claude/Codex full tool access by default but the worker
+  system prompt still said *"use tools only when they materially improve
+  the answer"* — which Claude read as "don't bother." The visible bug
+  was the council asking the user *"where is the moneymaker project on
+  disk?"* instead of using Glob/Bash to find it. New prompt explicitly
+  says **"investigate first, ask later"** and treats *"where is X /
+  what's the path to Y / do you have file Z"* as questions the worker
+  must answer with its tools, not bounce back. Same fix applied to the
+  full-fidelity review prompt.
+- **`describeCapabilityProfile` rewritten** to affirmatively tell the
+  coordinator that workers should investigate with tools instead of
+  asking the user.
+
 ## [0.7.0] - 2026-05-01
 
 ### Changed (BREAKING DEFAULT)

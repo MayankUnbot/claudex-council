@@ -3798,13 +3798,19 @@ const DEFAULT_CLARIFICATION_SYSTEM_PROMPT =
   "You are the clarification coordinator for a Claude + Codex council. Merge blockers from both agents into one minimal set of user-facing questions. Return valid JSON only.";
 
 const DEFAULT_FULL_FIDELITY_WORKER_APPEND_PROMPT =
-  "You are a full-fidelity Claude Code council worker. Keep your normal Claude Code capabilities available and use tools, project files, MCP servers, skills, and configured search only when they materially improve the answer. Coordinate with the independent Codex worker by producing a concrete answer, risks, and recommended next action.";
+  [
+    "You are a full-fidelity Claude Code council worker with your normal Claude Code capabilities available: file tools (Read, Glob, Grep, Edit, Write), shell (Bash), web search (WebSearch, WebFetch), MCP servers, skills, and CLAUDE.md / AGENTS.md context.",
+    "**Investigate first, ask later.** Before asking the user any clarifying question, use your tools to find the answer yourself. If they ask about a project, use Glob/Bash to locate it. If they ask about a file, Read it. If they ask about code, Grep for it. If they reference an external concept, WebSearch it.",
+    "Only ask the user a clarifying question when (a) the answer truly cannot be discovered with any available tool, (b) the question is about user intent or preference (not facts), or (c) you have already investigated and the user's request is genuinely ambiguous.",
+    "Treat 'where is X on disk?' / 'what's the path to Y?' / 'do you have file Z?' as questions you should answer with Glob or Bash, not bounce back to the user.",
+    "Coordinate with the independent Codex worker by producing a concrete answer, risks discovered during investigation, and a recommended next action.",
+  ].join(" ");
 
 const DEFAULT_FULL_FIDELITY_COORDINATOR_APPEND_PROMPT =
   "You are coordinating a full-fidelity council. You may inspect project state if needed before assigning lanes, but keep the planning call bounded and return the requested JSON.";
 
 const DEFAULT_FULL_FIDELITY_REVIEW_APPEND_PROMPT =
-  "You are reviewing inside a full-fidelity council. Use tools only if a concrete verification would materially change your review; otherwise keep the deliberation bounded.";
+  "You are reviewing inside a full-fidelity council. You have full Claude Code tools available — use Read/Grep/Bash to actually verify the peer worker's claims against the real code, files, or external sources rather than relying on guesswork. Investigation beats speculation.";
 
 const DEFAULT_FULL_FIDELITY_SYNTHESIS_APPEND_PROMPT =
   "You are the final synthesizer for a full-fidelity Claude + Codex council. You may use your normal Claude Code capabilities if you need to verify a fact or inspect project state before the final answer, but prefer merging the worker outputs directly when they are sufficient.";
@@ -4060,14 +4066,15 @@ function makeRoute(opts: {
 function describeCapabilityProfile(fidelity: CouncilFidelity): string {
   if (fidelity === "full-fidelity") {
     return [
-      "Capability profile: Full fidelity.",
-      "Claude keeps normal Claude Code tools/MCP/skills/memory context.",
-      "Codex loads the user's Codex config instead of disabling web/MCP/tools; sandbox follows claudexCouncil.codexFullFidelitySandbox.",
+      "Capability profile: Full fidelity (default).",
+      "Both workers behave like a native CLI session: Claude has full tools (Read/Glob/Grep/Bash/Edit/Write/WebSearch/WebFetch), MCP servers, skills, and CLAUDE.md.",
+      "Codex loads the user's ~/.codex/config.toml with web search, MCP, and AGENTS.md available; sandbox follows the user's config (or the claudexCouncil.codexFullFidelitySandbox override).",
+      "Workers should investigate with tools instead of asking the user for information that tools can discover.",
     ].join(" ");
   }
   return [
-    "Capability profile: Fast council.",
-    "Claude/Codex startup is trimmed for speed; Codex runs read-only with web/MCP/user config disabled, and Claude worker tools are disabled.",
+    "Capability profile: Fast council (opt-in).",
+    "Workers are stripped to a one-shot LLM call: no file tools, no shell, no web, no MCP. Workers cannot investigate — they answer from training data and the prompt context only.",
   ].join(" ");
 }
 

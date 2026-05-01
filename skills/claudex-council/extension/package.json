@@ -2,7 +2,7 @@
   "name": "claudex-council",
   "displayName": "Claudex Council",
   "description": "Two coding agents, one verdict. Claude routes, Codex responds, you get a synthesized answer — all in a chat panel inside VS Code.",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "publisher": "claudex-council",
   "license": "MIT",
   "engines": {
