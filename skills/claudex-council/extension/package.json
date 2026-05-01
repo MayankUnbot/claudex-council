@@ -2,7 +2,7 @@
   "name": "claudex-council",
   "displayName": "Claudex Council",
   "description": "Two coding agents, one verdict. Claude routes, Codex responds, you get a synthesized answer — all in a chat panel inside VS Code.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "claudex-council",
   "license": "MIT",
   "engines": {
@@ -131,16 +131,16 @@
         },
         "claudexCouncil.councilFidelity": {
           "type": "string",
-          "default": "fast",
+          "default": "full-fidelity",
           "enum": [
             "fast",
             "full-fidelity"
           ],
           "enumDescriptions": [
-            "Speed/cost profile. Claude worker tools/MCP/skills are disabled; Codex runs read-only with web/MCP/user config disabled.",
-            "Capability profile. Claude keeps normal Claude Code tools/MCP/skills/memory context; Codex loads the user's normal Codex config with web/MCP available unless restricted by the sandbox settings below."
+            "Speed/cost profile. Claude worker tools/MCP/skills are disabled; Codex runs read-only with web/MCP/user config disabled. Use only when latency/cost matter more than capability.",
+            "Default. Workers behave like a native `claude` / `codex` session: tools, web search, MCP servers, skills, CLAUDE.md / AGENTS.md, and the user's normal config are all loaded. Sandbox/approval posture is controlled by the settings below."
           ],
-          "description": "Capability profile for council turns. Use 'full-fidelity' when you want both agents to keep their native tool/config surface; use 'fast' when latency and cost matter more."
+          "description": "Capability profile for council turns. Default is 'full-fidelity' so workers have the same context and tool access as a native CLI session. Use 'fast' only when you want a cheap one-shot LLM pass with no tools."
         },
         "claudexCouncil.coordinatorMode": {
           "type": "string",
@@ -211,14 +211,14 @@
         },
         "claudexCouncil.codexFullFidelitySandbox": {
           "type": "string",
-          "default": "workspace-write",
+          "default": "inherit",
           "enum": [
             "inherit",
             "read-only",
             "workspace-write",
             "danger-full-access"
           ],
-          "description": "Codex sandbox used only when councilFidelity is 'full-fidelity'. 'inherit' leaves your Codex config/default untouched; 'danger-full-access' gives broader filesystem access."
+          "description": "Codex sandbox used only when councilFidelity is 'full-fidelity'. Default 'inherit' respects whatever sandbox is set in the user's ~/.codex/config.toml — the same behavior they'd get from a normal `codex` session. Override only if you want the council to be more or less restricted than the user's default."
         },
         "claudexCouncil.codexFullFidelityBypassApprovalsAndSandbox": {
           "type": "boolean",

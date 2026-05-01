@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.7.0] - 2026-05-01
+
+### Changed (BREAKING DEFAULT)
+- **Workers now behave like native Claude / Codex sessions by default.**
+  `claudexCouncil.councilFidelity` flips from `"fast"` to `"full-fidelity"`,
+  so a fresh install gives Claude its tools/MCP/skills/CLAUDE.md/web-search
+  surface and Codex its `~/.codex/config.toml`/AGENTS.md/web/MCP surface.
+  Previously the council was a bare-prompt one-shot — workers had no
+  file access, no shell, no web search, no MCP. The user-visible bug was
+  the council literally telling the user "I need to be flipped to a
+  profile with file/shell tools." That's now the default.
+- **`claudexCouncil.codexFullFidelitySandbox` default flips from
+  `"workspace-write"` to `"inherit"`.** Codex now respects whatever
+  sandbox is set in the user's `~/.codex/config.toml` — the same
+  behavior they get from a normal `codex` session. Override only if you
+  want the council to be more or less restricted than the user's default.
+- **Full-fidelity Codex now writes session rollouts** (was forced
+  `--ephemeral` even in full-fidelity). Matches a normal `codex` session
+  so you can find the run in your codex history afterwards. Fast mode
+  keeps `--ephemeral` for hygiene.
+- **Full-fidelity Codex now respects git-repo-check** (was forced
+  `--skip-git-repo-check` even in full-fidelity).
+- **Full-fidelity Claude now allows session persistence** (was forced
+  `--no-session-persistence` even in full-fidelity). Matches a native
+  `claude` session so you can resume from your normal Claude Code UI.
+  Fast mode keeps `--no-session-persistence`.
+- **Full-fidelity Claude `--max-turns` raised from 4 → 30.** A real
+  multi-step task (read files → search web → propose edits) needs more
+  than 4 turns. 30 is generous-but-safe — high enough for real agentic
+  work, low enough that a runaway loop doesn't torch quota.
+- **Full-fidelity timeouts raised from 240s → 600s** for Claude and
+  Codex worker/review/synthesis calls. Matches the codex helper's own
+  `--timeout 600` default. Cancel-button still works for users who want
+  to bail early.
+
+### Fixed
+- Three hardcoded `"fast"` and `"workspace-write"` fallback defaults in
+  `orchestrator.ts` (`getCouncilFidelity`, `getCodexFullFidelitySandbox`,
+  the worker-invocation `route?.fidelity ?? ...` paths) now match the
+  new package.json defaults. Without these, a config key missing from
+  user settings would silently revert to the old fast-mode behavior.
+- `ask_codex.py --fidelity` default flipped to match.
+
+### Migration note
+If you were relying on the old fast-mode-by-default behavior (e.g. for
+budget reasons or because you wanted strictly read-only workers), set
+`"claudexCouncil.councilFidelity": "fast"` in VS Code settings and the
+old behavior is restored exactly.
+
 ## [0.6.0] - 2026-05-01
 
 ### Added

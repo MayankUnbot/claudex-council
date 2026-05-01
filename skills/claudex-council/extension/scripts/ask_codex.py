@@ -81,11 +81,12 @@ def main() -> int:
     parser.add_argument(
         "--fidelity",
         choices=("fast", "full-fidelity"),
-        default="fast",
+        default="full-fidelity",
         help=(
-            "Capability profile. 'fast' strips Codex down for a cheap read-only "
-            "LLM pass. 'full-fidelity' keeps the user's Codex config, web/MCP "
-            "settings, tools, and project rules unless overridden by other flags."
+            "Capability profile. Default 'full-fidelity' keeps the user's "
+            "Codex config, web search, MCP servers, project rules, AGENTS.md, "
+            "and tool surface — same as a native `codex` session. Use 'fast' "
+            "only when you want a cheap read-only LLM pass with no tools."
         ),
     )
     parser.add_argument(
@@ -143,9 +144,6 @@ def main() -> int:
         codex_path, "exec",
         # Read prompt from stdin (the `-` sentinel).
         "-",
-        # No persistent session files / rollouts.
-        "--ephemeral",
-        "--skip-git-repo-check",
         "--color", "never",
         "--json",
         "-o", out_path,
@@ -153,7 +151,12 @@ def main() -> int:
     if args.fidelity == "fast":
         # Fast mode is a pure read-only LLM pass. It deliberately removes
         # user config, project rules, web search, MCP, and tool context.
+        # --ephemeral and --skip-git-repo-check stay scoped to fast so
+        # full-fidelity behaves like a normal `codex` session (writes
+        # rollouts, respects git-repo-check default).
         cmd += [
+            "--ephemeral",
+            "--skip-git-repo-check",
             "--ignore-user-config",
             "--ignore-rules",
             "--sandbox", "read-only",
@@ -170,8 +173,10 @@ def main() -> int:
             "-c", 'model_verbosity="low"',
         ]
     else:
-        # Full fidelity preserves Codex's normal config/rules/tooling. The
-        # only optional override here is the sandbox/approval posture.
+        # Full fidelity preserves Codex's normal config/rules/tooling.
+        # Sandbox follows the user's ~/.codex/config.toml unless the
+        # user explicitly overrode it via the extension's
+        # codexFullFidelitySandbox setting.
         if args.dangerously_bypass_approvals_and_sandbox:
             cmd.append("--dangerously-bypass-approvals-and-sandbox")
         elif args.full_sandbox != "inherit":

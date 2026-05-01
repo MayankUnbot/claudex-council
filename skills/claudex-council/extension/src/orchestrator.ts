@@ -256,16 +256,21 @@ const CLAUDE_WORKER_TIMEOUT_MS = 60_000;
 const CLAUDE_REVIEW_TIMEOUT_MS = 30_000;
 const CLAUDE_SYNTHESIS_TIMEOUT_MS = 35_000;
 const CLAUDE_COORDINATOR_TIMEOUT_MS = 90_000;
-const CLAUDE_FULL_FIDELITY_WORKER_TIMEOUT_MS = 240_000;
-const CLAUDE_FULL_FIDELITY_REVIEW_TIMEOUT_MS = 180_000;
-const CLAUDE_FULL_FIDELITY_SYNTHESIS_TIMEOUT_MS = 180_000;
-const CLAUDE_FULL_FIDELITY_COORDINATOR_TIMEOUT_MS = 180_000;
+// Full-fidelity timeouts are generous because real tool-using turns
+// (file reads, web searches, MCP tool calls, multi-step reasoning) can
+// legitimately take minutes. 600s matches the codex helper's own
+// --timeout default. Cancel-button still works via the tree-kill path
+// for users who get tired of waiting.
+const CLAUDE_FULL_FIDELITY_WORKER_TIMEOUT_MS = 600_000;
+const CLAUDE_FULL_FIDELITY_REVIEW_TIMEOUT_MS = 300_000;
+const CLAUDE_FULL_FIDELITY_SYNTHESIS_TIMEOUT_MS = 300_000;
+const CLAUDE_FULL_FIDELITY_COORDINATOR_TIMEOUT_MS = 300_000;
 const CODEX_WORKER_TIMEOUT_SEC = 45;
 const CODEX_REVIEW_TIMEOUT_SEC = 30;
 const CODEX_SYNTHESIS_TIMEOUT_SEC = 35;
-const CODEX_FULL_FIDELITY_WORKER_TIMEOUT_SEC = 240;
-const CODEX_FULL_FIDELITY_REVIEW_TIMEOUT_SEC = 180;
-const CODEX_FULL_FIDELITY_SYNTHESIS_TIMEOUT_SEC = 180;
+const CODEX_FULL_FIDELITY_WORKER_TIMEOUT_SEC = 600;
+const CODEX_FULL_FIDELITY_REVIEW_TIMEOUT_SEC = 300;
+const CODEX_FULL_FIDELITY_SYNTHESIS_TIMEOUT_SEC = 300;
 const AGENT_QUOTA_COOLDOWN_MS = 15 * 60 * 1000;
 // Auth/missing-binary failures also cool down so we don't re-spawn a broken
 // CLI on every successive turn (each spawn would otherwise burn 60s on the
@@ -1090,7 +1095,7 @@ export class Orchestrator {
     // hooks, slash commands, settings cascade, auto-memory, and a multi-K
     // tools system prompt before generating a single token. Cuts cold
     // start from ~13–17s to ~8s per call.
-    const fidelity = route?.fidelity ?? "fast";
+    const fidelity = route?.fidelity ?? "full-fidelity";
     const candidateModels = modelCandidates(modelChoice, this.getClaudeWorkerModel());
     let lastResult: RunResult | undefined;
     let lastFailure: AgentFailureInfo | undefined;
@@ -1181,7 +1186,7 @@ export class Orchestrator {
     // use stdin to bypass cross-platform shell-quoting hazards (a multi-
     // word prompt as positional argv gets word-split by cmd.exe under
     // shell:true on Windows, which makes argparse explode).
-    const fidelity = route?.fidelity ?? "fast";
+    const fidelity = route?.fidelity ?? "full-fidelity";
     const timeoutSec =
       fidelity === "full-fidelity"
         ? CODEX_FULL_FIDELITY_WORKER_TIMEOUT_SEC
@@ -2330,8 +2335,11 @@ export class Orchestrator {
 
   private getCouncilFidelity(): CouncilFidelity {
     const cfg = vscode.workspace.getConfiguration("claudexCouncil");
-    const value = (cfg.get<string>("councilFidelity") || "fast").trim();
-    return value === "full-fidelity" ? "full-fidelity" : "fast";
+    // Fallback default tracks package.json's default so a missing key
+    // behaves the same as a fresh install. Changing the package.json
+    // default also requires updating this fallback.
+    const value = (cfg.get<string>("councilFidelity") || "full-fidelity").trim();
+    return value === "fast" ? "fast" : "full-fidelity";
   }
 
   private getCoordinatorMode(): CoordinatorMode {
@@ -2365,7 +2373,7 @@ export class Orchestrator {
 
   private getCodexFullFidelitySandbox(): CodexFullFidelitySandbox {
     const cfg = vscode.workspace.getConfiguration("claudexCouncil");
-    const value = (cfg.get<string>("codexFullFidelitySandbox") || "workspace-write").trim();
+    const value = (cfg.get<string>("codexFullFidelitySandbox") || "inherit").trim();
     const allowed = new Set<CodexFullFidelitySandbox>([
       "inherit",
       "read-only",
@@ -2374,7 +2382,7 @@ export class Orchestrator {
     ]);
     return allowed.has(value as CodexFullFidelitySandbox)
       ? (value as CodexFullFidelitySandbox)
-      : "workspace-write";
+      : "inherit";
   }
 
   private shouldBypassCodexFullFidelityApprovals(): boolean {
@@ -3908,14 +3916,22 @@ function buildClaudeFullFidelityArgs(opts: {
   } else {
     args.push("--output-format", "json");
   }
-  args.push("--no-session-persistence");
+  // Full-fidelity intentionally does NOT pass --no-session-persistence:
+  // the user wanted the worker to behave like a native `claude` session,
+  // and that includes leaving a session record they can resume from
+  // their normal Claude Code UI. Fast mode keeps the flag for hygiene.
   if (opts.permissionMode && opts.permissionMode !== "default") {
     args.push("--permission-mode", opts.permissionMode);
   }
   if (opts.appendSystemPrompt?.trim()) {
     args.push("--append-system-prompt", opts.appendSystemPrompt.trim());
   }
-  args.push("--max-turns", "4");
+  // Cap agentic loops at a generous-but-safe number. Native `claude -p`
+  // has no cap, but an unbounded loop in a council worker can drift far
+  // outside the original prompt's scope. 30 is enough for a real
+  // multi-step task (read files, search web, propose edits) without
+  // letting a runaway loop torch the user's quota.
+  args.push("--max-turns", "30");
   return args;
 }
 
