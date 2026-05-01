@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.6.0] - 2026-05-01
+
+### Added
+- **`claude auth status` pre-flight on session create.** New session opens
+  trigger a fast (~100ms) probe via the official Claude CLI auth-status
+  command. If the user isn't signed in, a single actionable warning toast
+  fires with an "Open Terminal" button that runs `claude login` for them.
+  The probe is fire-and-forget so it never delays session creation.
+- **`CLAUDE_CODE_OAUTH_TOKEN` env pass-through (already worked, now
+  documented).** Set the token from `claude setup-token` to authenticate
+  `claude -p` without browser-based OAuth — needed for CI runners,
+  Docker, remote dev boxes, and locked-down corporate Macs.
+- **Synthesis fallback banner.** When the synthesizer fails (auth,
+  missing CLI, etc.) and the Council substitutes a worker's raw answer,
+  the user now sees a short italic notice — *"Council synthesis
+  unavailable; showing the working agent's answer directly"* — so they
+  know the answer didn't go through merge.
+
+### Fixed
+- **Auth detection now matches what the CLIs actually say.** Added the
+  real Claude/Codex error strings: `invalid api key`, `please run claude
+  login`, `please run codex login`, `missing credentials`, `403
+  forbidden`, `expired token`, `oauthtokenexpired`. Previously these
+  fell through to a generic "Claude failed" message with no recovery
+  guidance.
+- **Auth and missing-CLI failures now cool down for 5 minutes.** Without
+  this, the orchestrator re-spawned the broken CLI on every successive
+  turn and burned another 60s on the worker timeout. Cooldown matches
+  the existing 15-min behavior for quota failures, with a shorter TTL
+  because users typically fix auth/install issues quickly.
+- **Mac binary fallback now includes `~/Library/pnpm`.** Codex installed
+  via `pnpm i -g @openai/codex` (a real path users hit) was previously
+  invisible to the resolver when VS Code launched from the Dock.
+- **Linux binary fallback now includes `~/.cargo/bin` and `/snap/bin`.**
+  Catches Rust-installed and Ubuntu snap-installed CLIs.
+- **Windows binary fallback now includes `%LOCALAPPDATA%\\pnpm`.**
+  Symmetric with the Mac/Linux pnpm additions above.
+
 ## Unreleased
 
 ### Documentation

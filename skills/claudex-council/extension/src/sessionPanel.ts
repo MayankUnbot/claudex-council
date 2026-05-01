@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
-import { Orchestrator, OrchestratorEvent, PromptAttachment, AgentId, BubbleRole } from "./orchestrator";
+import { Orchestrator, OrchestratorEvent, PromptAttachment, AgentId, BubbleRole, probeClaudeAuth } from "./orchestrator";
 import { CATALOG, DEFAULT_SELECTIONS, ModelEntry, ModelSlot } from "./modelCatalog";
 import { applyAvailability, readCache, runFullProbe } from "./modelProber";
 
@@ -252,7 +252,38 @@ export class SessionPanel {
       }
     );
     panel.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "icon.svg");
-    return new SessionPanel(context, panel, onDispose, onTitleChange);
+    const session = new SessionPanel(context, panel, onDispose, onTitleChange);
+
+    // Pre-flight: check that Claude CLI is signed in. Fire-and-forget — we
+    // don't want to slow session creation by even a few hundred ms. If the
+    // probe finds a clear "not authenticated" signal we surface a single
+    // actionable warning toast. We deliberately don't pester for the
+    // "unknown" case (older CLI without `auth status`, network glitch,
+    // etc.) — the per-turn classifier still catches real failures.
+    void probeClaudeAuth().then((result) => {
+      if (result.state === "not-authenticated") {
+        vscode.window
+          .showWarningMessage(
+            "Claudex Council: Claude CLI is not signed in. Run `claude login` in a terminal to authenticate.",
+            "Open Terminal"
+          )
+          .then((choice) => {
+            if (choice === "Open Terminal") {
+              const term = vscode.window.createTerminal("claude login");
+              term.show();
+              term.sendText("claude login", false);
+            }
+          });
+      } else if (result.state === "binary-missing") {
+        vscode.window.showWarningMessage(
+          "Claudex Council: Claude CLI not found on PATH. Install Claude Code from https://code.claude.com or set the `claudexCouncil.claudeBinary` setting."
+        );
+      }
+      // state === "ok" — silent (the happy path).
+      // state === "unknown" — silent (don't false-positive).
+    });
+
+    return session;
   }
 
   /**

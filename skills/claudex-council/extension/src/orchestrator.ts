@@ -267,6 +267,11 @@ const CODEX_FULL_FIDELITY_WORKER_TIMEOUT_SEC = 240;
 const CODEX_FULL_FIDELITY_REVIEW_TIMEOUT_SEC = 180;
 const CODEX_FULL_FIDELITY_SYNTHESIS_TIMEOUT_SEC = 180;
 const AGENT_QUOTA_COOLDOWN_MS = 15 * 60 * 1000;
+// Auth/missing-binary failures also cool down so we don't re-spawn a broken
+// CLI on every successive turn (each spawn would otherwise burn 60s on the
+// worker timeout). 5 min is short enough that a user who runs `claude login`
+// or installs the missing CLI doesn't have to wait long for normal behavior.
+const AGENT_AUTH_COOLDOWN_MS = 5 * 60 * 1000;
 const STATIC_CONTEXT_CACHE_MS = 30_000;
 const PROJECT_CONTEXT_MAX_CHARS = 7_000;
 const ACTIVE_EDITOR_SNIPPET_MAX_CHARS = 2_500;
@@ -728,10 +733,21 @@ export class Orchestrator {
         console.warn(
           `[claudex-council] synthesis failed for turn ${turnId}: ${String(err).slice(0, 400)}`
         );
+        // When we substitute a worker's raw answer for the failed synthesis,
+        // prepend a one-line notice so the user knows they're seeing the raw
+        // worker output and not a synthesized Council answer. Without this
+        // banner the failure is silent and indistinguishable from a normal
+        // turn (the prior version logged to console only).
+        const fallbackNotice =
+          synthesisFailure.kind === "auth"
+            ? `> _Council synthesis unavailable (${synthesisFailure.label.toLowerCase()} not authenticated). Showing the working agent's answer directly._\n\n`
+            : synthesisFailure.kind === "missing"
+              ? `> _Council synthesis unavailable (synthesis CLI not found). Showing the working agent's answer directly._\n\n`
+              : `> _Council synthesis failed; showing the working agent's answer directly._\n\n`;
         if (claudeOk) {
-          synthesis = claudeText.trim();
+          synthesis = fallbackNotice + claudeText.trim();
         } else if (codexOk) {
-          synthesis = codexText.trim();
+          synthesis = fallbackNotice + codexText.trim();
         } else {
           synthesis = synthesisFailure.message;
         }
@@ -2526,10 +2542,21 @@ export class Orchestrator {
   }
 
   private rememberAgentFailure(agent: AgentRuntimeId, info: AgentFailureInfo): void {
-    if (info.kind !== "quota") return;
+    // Cooldown for failures that won't self-resolve within seconds:
+    // - quota: wait for the upstream window to reset
+    // - auth: the user needs to run `<cli> login` — re-spawning the same
+    //   broken CLI on the next turn just burns another 60s timeout
+    // - missing: same logic; the binary isn't going to appear by itself
+    // Other kinds (transient, model, error, timeout) may resolve on retry,
+    // so we don't cool them down.
+    if (info.kind !== "quota" && info.kind !== "auth" && info.kind !== "missing") return;
+    const ttl =
+      info.kind === "quota"
+        ? AGENT_QUOTA_COOLDOWN_MS
+        : AGENT_AUTH_COOLDOWN_MS;
     this.agentCooldowns[agent] = {
       info,
-      until: Date.now() + AGENT_QUOTA_COOLDOWN_MS,
+      until: Date.now() + ttl,
     };
   }
 
@@ -3111,20 +3138,29 @@ function classifyAgentFailure(agent: AgentRuntimeId | "council", raw: string): A
     lower.includes("login required") ||
     lower.includes("oauth token revoked") ||
     lower.includes("oauth token has expired") ||
+    lower.includes("oauthtokenexpired") ||
+    lower.includes("expired token") ||
     lower.includes("please run /login") ||
+    lower.includes("please run claude login") ||
+    lower.includes("please run codex login") ||
     lower.includes("authentication_error") ||
     lower.includes("requires authentication") ||
+    lower.includes("invalid api key") ||
+    lower.includes("missing credentials") ||
+    lower.includes("missing or expired credentials") ||
     lower.includes("api error: 401") ||
     lower.includes("401 unauthorized") ||
+    lower.includes("403 forbidden") ||
     lower.includes("unauthorized")
   ) {
+    const loginCmd = agent === "codex" ? "codex login" : "claude login";
     return {
       agent,
       label,
       kind: "auth",
       title: `${label} CLI is not authenticated.`,
       message:
-        `${label} CLI is not logged in. Run \`${agent === "codex" ? "codex" : "claude"}\` once in a terminal to authenticate, then try again.`,
+        `${label} CLI is not logged in. Run \`${loginCmd}\` in a terminal to authenticate, then try again.`,
       raw,
     };
   }
@@ -3414,6 +3450,13 @@ function truncateMiddle(s: string, max: number): string {
  * and leaves grandchildren orphaned.
  */
 function getSpawnOptions(cwd: string, opts: { fullFidelity?: boolean } = {}) {
+  // Inherit the parent process env. This is the headless-auth path:
+  // setting CLAUDE_CODE_OAUTH_TOKEN (generated via `claude setup-token`,
+  // see https://code.claude.com/docs/en/authentication) lets `claude -p`
+  // run without a browser-based OAuth flow — useful for CI, Docker,
+  // remote servers, or company-locked Macs where browser login is
+  // blocked. We don't read or set the token ourselves; the inherit
+  // here is what makes it work.
   const env = { ...process.env };
   if (!opts.fullFidelity) {
     env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1";
@@ -3494,6 +3537,8 @@ function resolveBinary(name: string): string | null {
       "/usr/local/bin",
       path.join(os.homedir(), ".npm-global", "bin"),
       path.join(os.homedir(), ".local", "bin"),
+      // pnpm-installed globals on macOS land in ~/Library/pnpm
+      path.join(os.homedir(), "Library", "pnpm"),
       "/usr/bin"
     );
   } else if (process.platform === "linux") {
@@ -3502,11 +3547,17 @@ function resolveBinary(name: string): string | null {
       path.join(os.homedir(), ".npm-global", "bin"),
       path.join(os.homedir(), ".local", "bin"),
       path.join(os.homedir(), "node_modules", ".bin"),
+      // Rust / cargo-installed globals
+      path.join(os.homedir(), ".cargo", "bin"),
+      // Ubuntu snap bin (e.g. snap-installed node packages)
+      "/snap/bin",
       "/usr/bin"
     );
   } else if (process.platform === "win32") {
     const appdata = process.env.APPDATA;
     if (appdata) dirs.push(path.join(appdata, "npm"));
+    const localappdata = process.env.LOCALAPPDATA;
+    if (localappdata) dirs.push(path.join(localappdata, "pnpm"));
   }
 
   for (const dir of dirs) {
@@ -3521,6 +3572,83 @@ function resolveBinary(name: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Pre-flight check that the Claude CLI is signed in. Uses the official
+ * `claude auth status` command (exits 0 if logged in, 1 if not — see
+ * https://code.claude.com/docs/en/cli-reference). Cheaper and more
+ * reliable than spawning a real `-p` call and parsing stderr.
+ *
+ * Fire-and-forget by callers; takes ~100ms when claude is on PATH and
+ * authenticated, ~5s upper bound when not. Returns:
+ *   - { state: "ok" }                   — signed in
+ *   - { state: "not-authenticated" }    — binary present, not logged in
+ *   - { state: "binary-missing" }       — claude not found anywhere
+ *   - { state: "unknown", reason }      — probe failed for some other
+ *                                          reason (don't pester the user)
+ */
+export async function probeClaudeAuth(): Promise<
+  | { state: "ok" }
+  | { state: "not-authenticated" }
+  | { state: "binary-missing" }
+  | { state: "unknown"; reason: string }
+> {
+  const cfg = vscode.workspace.getConfiguration("claudexCouncil");
+  const configured = cfg.get<string>("claudeBinary");
+  const binary =
+    configured && configured.trim()
+      ? configured.trim()
+      : resolveBinary("claude") || "claude";
+
+  return new Promise((resolve) => {
+    let proc: ChildProcess;
+    try {
+      proc = spawn(binary, ["auth", "status", "--text"], {
+        shell: process.platform === "win32",
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (err) {
+      resolve({ state: "binary-missing" });
+      return;
+    }
+
+    let stderrBuf = "";
+    proc.stderr?.on("data", (d) => (stderrBuf += d.toString()));
+    proc.on("error", (err: NodeJS.ErrnoException) => {
+      // ENOENT = binary genuinely not on PATH (and not in any fallback dir).
+      if (err.code === "ENOENT") resolve({ state: "binary-missing" });
+      else resolve({ state: "unknown", reason: String(err) });
+    });
+
+    const timer = setTimeout(() => {
+      try {
+        proc.kill();
+      } catch {
+        /* ignore */
+      }
+      resolve({ state: "unknown", reason: "auth probe timed out" });
+    }, 5000);
+
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      // Per the docs: exit 0 = authenticated, exit 1 = not authenticated.
+      // Anything else (e.g. exit 127, command-unknown) is treated as
+      // "unknown" so older Claude CLIs without `auth status` don't
+      // trigger a false warning.
+      if (code === 0) {
+        resolve({ state: "ok" });
+      } else if (code === 1) {
+        resolve({ state: "not-authenticated" });
+      } else {
+        resolve({
+          state: "unknown",
+          reason: `exit ${code}: ${stderrBuf.trim().slice(0, 160)}`,
+        });
+      }
+    });
+  });
 }
 
 function findCavemanSkillPath(): string | undefined {

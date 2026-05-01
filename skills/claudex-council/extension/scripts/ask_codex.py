@@ -387,10 +387,15 @@ def _resolve_codex_binary(override: str | None = None) -> str | None:
         # On Windows, npm-global bins are usually on PATH already; if not,
         # %APPDATA%\npm is the standard location for npm globals.
         appdata = os.environ.get("APPDATA")
+        localappdata = os.environ.get("LOCALAPPDATA")
         candidates = []
         if appdata:
             candidates.append(os.path.join(appdata, "npm", "codex.cmd"))
             candidates.append(os.path.join(appdata, "npm", "codex"))
+        if localappdata:
+            # pnpm globals on Windows
+            candidates.append(os.path.join(localappdata, "pnpm", "codex.cmd"))
+            candidates.append(os.path.join(localappdata, "pnpm", "codex"))
     else:
         home = os.path.expanduser("~")
         candidates = [
@@ -399,6 +404,12 @@ def _resolve_codex_binary(override: str | None = None) -> str | None:
             os.path.join(home, ".npm-global", "bin", "codex"),
             os.path.join(home, ".local", "bin", "codex"),
             os.path.join(home, "node_modules", ".bin", "codex"),
+            # pnpm globals: ~/Library/pnpm on macOS, ~/.local/share/pnpm on Linux
+            os.path.join(home, "Library", "pnpm", "codex"),
+            os.path.join(home, ".local", "share", "pnpm", "codex"),
+            # Rust / cargo + Ubuntu snap (Linux)
+            os.path.join(home, ".cargo", "bin", "codex"),
+            "/snap/bin/codex",
             "/usr/bin/codex",
         ]
     for c in candidates:
