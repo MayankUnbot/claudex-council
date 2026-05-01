@@ -1,157 +1,216 @@
-# Codex Bridge
+# claudex-council
 
-### Make Claude Code and OpenAI Codex talk to each other.
+> Two coding agents, one verdict — inside VS Code.
 
-Uses [Claude Code Channels](https://code.claude.com/docs/en/channels) for push notifications on Claude's side and a blocking MCP tool on Codex's side.
+A VS Code extension that orchestrates **Claude** and **Codex** as a council per prompt. Both agents answer the same question in parallel; a synthesizer pass merges their outputs into one final answer. You see one chat bubble; the deliberation happens behind it.
 
-Two AI coding agents. One conversation. Real-time web UI to watch it happen.
+> **Unofficial.** Not affiliated with, endorsed by, or sponsored by Anthropic, OpenAI, GitHub, or Microsoft. Claude, Codex, and Visual Studio Code are trademarks of their respective owners. This project orchestrates their publicly-documented CLIs.
 
-> Looking for the VS Code extension that turns Claude + Codex into a planning/review council? See [skills/claudex-council](skills/claudex-council/README.md). It is built for architecture plans, code review, debugging, refactors, and high-stakes engineering decisions where a second model can catch what one model misses.
+---
 
-![Codex Bridge UI showing a live multi-turn exchange between Codex and Claude](screenshot.png)
+## What it is
 
-## The problem
+When you ask one question, claudex-council:
 
-Claude Code and Codex CLI are both great coding agents, but they don't expose a native symmetric chat protocol between each other. Plain MCP is request-response, not push-to-both-live-sessions. A2A (Google's agent protocol) isn't supported natively by either tool. There's no off-the-shelf way to make the two agents hold a live conversation.
+1. Classifies the prompt locally (greeting, factual, code, architecture, review, debugging, refactor)
+2. Routes it: trivial prompts go to a single agent fast-path; substantive prompts go to the full council
+3. Runs **Claude** and **Codex** in parallel as workers
+4. Merges their answers via a synthesizer (Claude Haiku by default, configurable)
+5. Returns one final Council answer
 
-## The solution
+You can switch visibility modes if you want to see the worker drafts and routing decisions, or keep the default `final-only` mode where the chat looks like a normal one-bubble conversation.
 
-Claude Code recently shipped [Channels](https://code.claude.com/docs/en/channels), a way to push messages into a running session from an MCP server. This project uses that as the push mechanism on Claude's side, and a blocking MCP tool call on Codex's side, to create a practical bidirectional bridge between the two.
+## When the council is worth it
 
-<p align="center">
-  <img src="architecture.svg" alt="Codex Bridge architecture diagram" width="800"/>
-</p>
+| Use case | Why two agents help |
+|---|---|
+| **Architecture decisions** | Claude proposes; Codex challenges. Synthesis lands a *decisive* recommendation with the deciding factor. |
+| **Code review before merge** | Two independent reads catch what one misses; the synthesizer rejects weak suggestions. |
+| **Debugging hard failures** | Two different root-cause hypotheses surface; the synthesizer picks the most probable. |
+| **Large refactors** | One lane proposes the path; the other looks for breakage and migration traps. |
+| **Plan mode / technical strategy** | One decision memo instead of two disconnected opinions. |
+| **Security / threat modeling** | Independent second pass catches missed attack surface. |
 
-When Codex calls `send_to_claude()`, the bridge holds the connection open until Claude replies. From Codex's perspective it's a tool call that takes a bit to return. From Claude's perspective it's a channel notification. The bridge sits in between, routing messages and showing them in a web UI.
+## When NOT to use it
 
-In practice, Codex-initiated turns feel real-time and two-way. This is not symmetric push in both directions though: Claude can reply immediately to a pending Codex request, but Claude-initiated messages still wait until Codex polls or makes another request.
+For greetings, single-fact lookups, formatting, or boilerplate, use Claude or Codex directly. A full council turn costs ~2.5–3× the wall time of a solo agent and adds no quality lift on trivial work. The extension's local router fast-paths these to a single agent automatically, but you can also just use the CLIs directly.
 
-## What you need
+## How it actually works
 
-- [Bun](https://bun.sh) (check with `bun --version`, install from bun.sh if missing)
-- [Claude Code](https://code.claude.com) v2.1.80+ with a claude.ai account
-- [Codex CLI](https://github.com/openai/codex) with an OpenAI API key or ChatGPT login
+```
+┌──────────┐
+│  user    │
+│  prompt  │
+└────┬─────┘
+     │
+┌────▼──────────────────────────────────────┐
+│  Orchestrator (VS Code extension host)    │
+│                                           │
+│   1. decideRoute()  — local classifier    │
+│      ├─ trivial      → Claude only        │
+│      ├─ code/review  → full council       │
+│      └─ architecture → full council       │
+│                                           │
+│   2. spawn workers in parallel:           │
+│      ├─ stdin → claude -p (Claude worker) │
+│      └─ stdin → python ask_codex.py       │
+│                  (Codex worker)           │
+│                                           │
+│      both emit stream-json chunks         │
+│      ──→ webview via postMessage          │
+│                                           │
+│   3. synthesizer pass:                    │
+│      stdin → claude -p --model haiku      │
+│      with both worker outputs as context  │
+└────────────────┬──────────────────────────┘
+                 │  events
+                 ▼
+        ┌─────────────────┐
+        │  webview panel  │
+        │  ├─ bubbles     │
+        │  ├─ live verbs  │
+        │  ├─ timings     │
+        │  └─ model badges│
+        └─────────────────┘
+```
 
-## Setup
+**No localhost server, no MCP layer, no extra processes.** The extension orchestrates `claude` and `codex` CLIs directly via `child_process.spawn` and pipes prompts through stdin (avoids shell-quoting bugs and Unicode mojibake).
 
-### 1. Clone and install
+**Each session is an independent webview panel** with its own orchestrator instance. Sessions persist across VS Code reloads via `globalState`. You can run multiple sessions in parallel — they don't share state.
+
+**Worker authentication is handled by the underlying CLIs** — `claude login` and `codex login` once in a terminal, and the extension uses your existing auth.
+
+## Requirements
+
+| Tool | Why | Install |
+|------|-----|---------|
+| [VS Code](https://code.visualstudio.com/) 1.85+ | Hosts the extension | Per-OS download |
+| [Claude CLI](https://code.claude.com) (`claude`) | Claude worker + synthesizer | Per [Anthropic docs](https://code.claude.com); `claude login` to authenticate |
+| [Codex CLI](https://github.com/openai/codex) (`codex`) | Codex worker | `npm i -g @openai/codex`; run `codex` once to authenticate |
+| Python 3.8+ | Runs the `ask_codex.py` wrapper that captures Codex's reply cleanly | Preinstalled on macOS/Linux; [python.org](https://python.org) on Windows |
+
+Works on **macOS**, **Linux**, and **Windows**. Process spawning, binary resolution, encoding, and tree-kill are all platform-aware. CI runs on `macos-latest`, `windows-latest`, `ubuntu-latest`.
+
+## Install
+
+### From source (current path)
 
 ```bash
 git clone https://github.com/MayankUnbot/claudex-council.git
-cd claudex-council
-bun install
+cd claudex-council/skills/claudex-council/extension
+npm install
+npx tsc -p ./
+npx --yes @vscode/vsce package --out claudex-council.vsix --allow-missing-repository --skip-license
+
+# Install the .vsix you just built
+code --install-extension claudex-council.vsix --force          # macOS / Linux
+code.cmd --install-extension claudex-council.vsix --force      # Windows
 ```
 
-### 2. Register the bridge with Claude Code
+Reload VS Code (`Ctrl+Shift+P` → "Reload Window"). A council icon appears in the left activity bar.
 
-Add `codex-bridge` to your Claude Code MCP config. Open `~/.mcp.json` (create it if it doesn't exist) and add:
+### Use
 
-```json
-{
-  "mcpServers": {
-    "codex-bridge": {
-      "type": "stdio",
-      "command": "bun",
-      "args": ["/full/path/to/codex-claude-bridge/server.ts"]
-    }
-  }
-}
-```
+1. Click the **two-overlapping-circles** icon in the left activity bar.
+2. The **Sessions** sidebar opens. Click `+ New Council Session`.
+3. A new editor tab opens with the chat UI. Type a prompt and hit Enter.
+4. Watch verbs rotate as Claude and Codex work in parallel; final synthesis arrives last.
+5. Click `+` again to start a second independent session in another tab.
 
-Replace `/full/path/to` with wherever you cloned the repo.
+## Settings (essentials)
 
-### 3. Register the bridge with Codex CLI
+Open `Settings → Extensions → Claudex Council`. Most users never need to touch these — the defaults are tuned for low cost and good quality.
 
-Add the Codex-side MCP server to `~/.codex/config.toml`:
+| Setting | Default | What it does |
+|---|---|---|
+| `claudexCouncil.economyMode` | `false` | Run Claude only per turn (skip Codex + synthesis). ~30% of normal cost. |
+| `claudexCouncil.councilFidelity` | `fast` | `fast` strips workers to bare prompt for speed. `full-fidelity` keeps Claude tools/MCP/skills and Codex's normal config. |
+| `claudexCouncil.coordinatorMode` | `local` | `local` uses the deterministic prompt classifier (instant, free). `model` runs a real coordinator model — slower, more expensive, only switch if `local` disappoints you. |
+| `claudexCouncil.orchestrationVisibility` | `final-only` | `final-only` shows one merged Council answer. `answers` shows worker drafts. `detailed` shows every internal bubble. |
+| `claudexCouncil.deliberationMode` | `off` | `auto` or `always` add a Claude↔Codex peer-review round before final synthesis. Off by default for speed. |
+| `claudexCouncil.smartModelRouting` | `true` | Council picks faster/stronger models per lane when the session is on defaults. Explicit dropdown picks are respected. |
+| `claudexCouncil.claudeWorkerModel` | *empty* | Override Claude worker model (e.g. `claude-sonnet-4-6`, `claude-opus-4-7`). Empty = session dropdown default. |
+| `claudexCouncil.codexWorkerModel` | *empty* | Override Codex worker model (e.g. `gpt-5-codex`, `o3`). |
+| `claudexCouncil.deciderModel` | *empty* | Override synthesizer model. Default is `claude-haiku-4-5` for low latency. |
 
-```toml
-[mcp_servers.codex-bridge]
-command = "bun"
-args = ["/full/path/to/codex-claude-bridge/codex-mcp.ts"]
-tool_timeout_sec = 120
-```
+Full settings reference: [skills/claudex-council/README.md](skills/claudex-council/README.md#settings).
 
-The `tool_timeout_sec = 120` is needed because `send_to_claude` can wait for Claude's reply for about 2 minutes. The default 60s timeout will kill the connection too early.
+## Account and budget
 
-### 4. Start Claude Code with the channel
+claudex-council does not bypass quotas. It uses the local `claude` and `codex` CLIs you're already signed into, so a full council turn can spend from **both** Claude and Codex allowances per turn.
 
-```bash
-claude --dangerously-load-development-channels server:codex-bridge
-```
+| Account situation | What works | Recommended |
+|---|---|---|
+| Both CLIs signed in with quota | Full council | Defaults are fine |
+| Only one CLI signed in | Single-lane fallback (extension continues with the available agent) | Keep using; add the second provider when you want full council |
+| Neither signed in | Won't work — the extension can't run without at least one authenticated CLI | Run `claude login` and `codex login` |
+| Free-tier accounts | Either CLI may not have agent access | Use Economy mode if Claude works for you |
 
-You should see `Listening for channel messages from: server:codex-bridge` in the output.
+Auth-failure surfacing in the current build is partial: when a CLI fails for an auth reason, the extension surfaces a "lane unavailable" notice but does not always tell you the exact remediation command. Improving this is on the roadmap.
 
-### 5. Start Codex CLI
-
-In a separate terminal:
-
-```bash
-codex
-```
-
-Codex will auto-load the `codex-bridge` MCP server from your config. Verify by running `/mcp` inside Codex — you should see `codex-bridge` listed with `send_to_claude` and `check_claude_messages` tools.
-
-### 6. Open the web UI
-
-Go to [http://localhost:8788](http://localhost:8788) in your browser. This is where you watch the conversation happen.
-
-## Usage
-
-Start the conversation from Codex's side. Tell Codex something like:
+## Repository layout
 
 ```
-Use Claude bridge to discuss whether we should use Redis or Memcached for caching. Keep going until you agree.
+.
+├── README.md                          ← this file
+├── architecture.svg                   ← legacy bridge diagram (see "Note on bridge code" below)
+├── skills/
+│   └── claudex-council/               ← THE PRODUCT
+│       ├── README.md                  ← in-depth product documentation
+│       ├── extension/                 ← VS Code extension source
+│       │   ├── src/
+│       │   │   ├── orchestrator.ts    ← brain: routing, spawn, synthesis
+│       │   │   ├── sessionPanel.ts    ← per-session webview + state
+│       │   │   ├── modelCatalog.ts    ← model registry
+│       │   │   ├── modelProber.ts     ← subscription-aware availability probe
+│       │   │   ├── extension.ts       ← activation, commands
+│       │   │   └── council/ledger.ts  ← shared task ledger for full-council turns
+│       │   ├── webview/               ← chat UI (HTML/CSS/JS)
+│       │   ├── scripts/ask_codex.py   ← Codex CLI wrapper (UTF-8, tree-kill)
+│       │   └── package.json           ← extension manifest + settings schema
+│       ├── scripts/                   ← benchmark + eval utilities
+│       ├── test/                      ← smoke + auth-matrix tests
+│       ├── CHANGELOG.md
+│       ├── CONTRIBUTING.md
+│       ├── CROSS_PLATFORM.md
+│       ├── SECURITY.md
+│       ├── SKILL.md
+│       └── VALUE_PROPOSITION.md
+│
+├── codex-mcp.ts                       ← legacy: codex-side MCP server (see below)
+├── server.ts                          ← legacy: Claude-side channel plugin (see below)
+├── .mcp.json                          ← legacy: MCP plugin config
+└── .claude-plugin/plugin.json         ← legacy: Claude Code plugin metadata
 ```
 
-Codex calls `send_to_claude()`, the bridge pushes it to Claude via a channel notification, Claude processes it and replies, and the bridge returns Claude's reply to Codex. Codex can keep calling `send_to_claude()` to continue the discussion.
+### Note on the legacy bridge code
 
-This means the smooth path is Codex -> Claude -> Codex. It behaves like a live back-and-forth conversation, even though the overall bridge is still asymmetric under the hood.
+The root files (`codex-mcp.ts`, `server.ts`, `.mcp.json`, `.claude-plugin/`, `architecture.svg`) are an earlier experiment that piped conversations between Claude Code and Codex over an MCP-based bridge protocol. **claudex-council does not use any of this** — the extension spawns the CLIs directly with `child_process.spawn`, no MCP layer involved. The bridge code is preserved in this repo as a separate exploration but is not part of the council product.
 
-You can also type in the web UI as a human observer — your messages go straight to Claude's session.
+## Documentation
 
-### Web UI
+- **Full product README** with extended features, value proposition, and use-case guidance: [skills/claudex-council/README.md](skills/claudex-council/README.md)
+- **Cross-platform notes** (verified Windows; macOS/Linux structural with CI): [skills/claudex-council/CROSS_PLATFORM.md](skills/claudex-council/CROSS_PLATFORM.md)
+- **Why this exists**: [skills/claudex-council/VALUE_PROPOSITION.md](skills/claudex-council/VALUE_PROPOSITION.md)
+- **Changelog**: [skills/claudex-council/CHANGELOG.md](skills/claudex-council/CHANGELOG.md)
+- **Security model**: [skills/claudex-council/SECURITY.md](skills/claudex-council/SECURITY.md)
+- **Contributing**: [skills/claudex-council/CONTRIBUTING.md](skills/claudex-council/CONTRIBUTING.md)
 
-The web UI at localhost:8788 shows all messages in real time:
-- Purple bubbles on the left = Claude
-- Green bubbles on the right = Codex
-- Gray bubbles = you (human observer)
+## Roadmap (next)
 
-### Starting from Claude's side
-
-Claude has a `send_to_codex` tool, but since Codex can't receive push notifications, the message sits in a queue until Codex polls for it. That's why the Codex-initiated flow is the smoother and more real-time path.
-
-## Files
-
-| File | What it does |
-|------|------|
-| `server.ts` | Claude Code channel plugin. MCP server over stdio, web UI, and HTTP API endpoints for the Codex side. |
-| `codex-mcp.ts` | Codex CLI MCP server. Exposes `send_to_claude()` and `check_claude_messages()`. Talks to `server.ts` over HTTP. |
-| `.mcp.json` | Plugin config for Claude Code's plugin system. |
-| `.claude-plugin/plugin.json` | Plugin metadata. |
-
-## Configuration
-
-| Env var | Default | What it does |
-|---------|---------|------|
-| `CODEX_BRIDGE_PORT` | `8788` | Port for the web UI and internal API |
-| `CODEX_BRIDGE_URL` | `http://localhost:8788` | URL the Codex-side MCP server uses to reach the bridge |
-
-## Why not MCP or A2A?
-
-**MCP** works as part of the transport here, but by itself it's request-response. One agent can call the other as a tool, but neither side gets a native symmetric push channel into the other's live session.
-
-**A2A** (Google's Agent-to-Agent protocol) would be a cleaner fit in theory, but neither Claude Code nor Codex exposes native A2A or ACP integration today. Community bridges usually end up wrapping those protocols in MCP anyway.
-
-**Claude Code Channels** are the only push mechanism either tool exposes today for this setup. This bridge uses channels on Claude's side and a blocking tool call on Codex's side, so Codex-initiated conversations feel live and bidirectional even though Claude -> Codex still falls back to queue + poll.
-
-## Known limitations
-
-- Not symmetric full duplex: Codex-initiated turns are real-time, but Claude-initiated messages wait for Codex to poll or make another request.
-- Codex can't receive push notifications — conversation flows best when Codex initiates.
-- Both agents need to be on the same machine (localhost bridge).
-- Channels are a Claude Code research preview feature — `--dangerously-load-development-channels` flag is required.
-- Claude must include `reply_to` when replying to Codex. If it omits it, the reply still appears in the web UI but won't route back to Codex.
+- Auth-failure detection that catches real CLI strings (`Invalid API key`, `not signed in`, etc.) and surfaces the remediation command (`claude login` / `codex login`) inline
+- `claude auth status` / Codex equivalent pre-flight on session creation
+- `CLAUDE_CODE_OAUTH_TOKEN` env var support for headless/CI/locked-down environments
+- Auth-failure cooldown so successive turns don't re-burn 60s on the same broken CLI
+- "Plan Mode" composer toggle: first turn = full council, follow-up turns = solo for fast iteration
+- Mac binary-resolution fallback for `pnpm`-installed Codex (`~/Library/pnpm`)
+- Linux fallback for `~/.cargo/bin` and `/snap/bin`
+- Conditional synthesis: skip the synthesizer call when worker briefs already agree
 
 ## License
 
-MIT
+[MIT](skills/claudex-council/LICENSE)
+
+## Trademark notice
+
+"Claude" is a trademark of Anthropic, PBC. "Codex" and "OpenAI" are trademarks of OpenAI, Inc. "Visual Studio Code" is a trademark of Microsoft Corporation. This project is an independent open-source integration that calls those products' publicly-documented CLIs. It is not affiliated with, endorsed by, or sponsored by any of them.
