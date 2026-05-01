@@ -139,6 +139,8 @@ Full settings reference: [skills/claudex-council/README.md](skills/claudex-counc
 
 claudex-council does not bypass quotas. It uses the local `claude` and `codex` CLIs you're already signed into, so a full council turn can spend from **both** Claude and Codex allowances per turn.
 
+Claude Max, ChatGPT Pro, or "max quota" is **not** required for claudex-council to work. Higher limits only make full-council usage more practical for frequent or large tasks. A full council turn requires both CLIs to be installed, signed in, and currently within quota; if only one side is usable, the extension falls back to that available lane.
+
 | Account situation | What works | Recommended |
 |---|---|---|
 | Both CLIs signed in with quota | Full council | Defaults are fine |
@@ -146,7 +148,7 @@ claudex-council does not bypass quotas. It uses the local `claude` and `codex` C
 | Neither signed in | Won't work — the extension can't run without at least one authenticated CLI | Run `claude login` and `codex login` |
 | Free-tier accounts | Either CLI may not have agent access | Use Economy mode if Claude works for you |
 
-Auth-failure surfacing in the current build is partial: when a CLI fails for an auth reason, the extension surfaces a "lane unavailable" notice but does not always tell you the exact remediation command. Improving this is on the roadmap.
+Auth, quota, missing-binary, timeout, and unsupported-model failures are surfaced as lane availability notices with recovery guidance. The fake auth matrix covers signed-in, missing CLI, signed-out, quota-limited, and timeout states for both Claude and Codex.
 
 ## Repository layout
 
