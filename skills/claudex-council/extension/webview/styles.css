@@ -1,0 +1,782 @@
+/* All colors come from VS Code theme variables so the panel matches the
+   user's active theme automatically (Dark+, Light+, high-contrast, etc.). */
+
+:root {
+  --council-planner: #3b82f6;   /* blue for routing/planning */
+  --council-decider: #d97706;   /* warm amber for decider */
+  --council-claude:  #8b5cf6;   /* purple to match Claude's brand cue */
+  --council-codex:   #10b981;   /* green to match Codex/OpenAI cue */
+  --council-user:    var(--vscode-foreground);
+
+  --bubble-radius: 10px;
+  --bubble-pad: 12px 14px;
+  --gap-vert: 14px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Probe banner (above the model bar) ---------- */
+
+.probe-banner {
+  padding: 6px 12px;
+  font-size: 11px;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+  color: var(--vscode-descriptionForeground);
+  border-bottom: 1px solid var(--vscode-panel-border, transparent);
+  flex-shrink: 0;
+}
+
+/* ---------- Unified council top bar ---------- */
+
+.council-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border, transparent);
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.council-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.council-brand .dot {
+  width: 10px;
+  height: 10px;
+}
+
+.council-brand-main {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  line-height: 1.25;
+}
+
+.council-subtitle {
+  font-size: 10.5px;
+  line-height: 1.25;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: min(360px, 56vw);
+}
+
+.model-drawer {
+  margin-left: auto;
+  min-width: 0;
+}
+
+.model-drawer summary {
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  border: 1px solid var(--vscode-panel-border, transparent);
+  border-radius: 4px;
+  padding: 4px 8px;
+  user-select: none;
+}
+
+.model-drawer summary:hover {
+  color: var(--vscode-foreground);
+  background: var(--vscode-toolbar-hoverBackground, rgba(127,127,127,0.15));
+}
+
+.model-drawer[open] {
+  flex-basis: 100%;
+  margin-left: 0;
+}
+
+.model-drawer[open] summary {
+  display: inline-block;
+  margin-bottom: 8px;
+}
+
+.model-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 8px;
+  width: 100%;
+  border: 1px solid var(--vscode-panel-border, transparent);
+  border-radius: 6px;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.08));
+  font-size: 11px;
+}
+
+.ms {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ms label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.ms select {
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, transparent));
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: var(--vscode-font-family);
+  max-width: 200px;
+  cursor: pointer;
+}
+.ms select:focus { outline: 1px solid var(--vscode-focusBorder); }
+
+.ms-static {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.ms-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+.ms-action-btn {
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-panel-border, transparent);
+  border-radius: 4px;
+  padding: 3px 9px;
+  font-size: 10.5px;
+  cursor: pointer;
+  opacity: 0.75;
+  font-family: inherit;
+}
+.ms-action-btn:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(127,127,127,0.15));
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.dot-planner { background: var(--council-planner); }
+.dot-decider { background: var(--council-decider); }
+.dot-claude  { background: var(--council-claude); }
+.dot-codex   { background: var(--council-codex); }
+
+/* ---------- Transcript ---------- */
+
+.transcript {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 18px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-vert);
+  scroll-behavior: smooth;
+}
+
+.transcript::-webkit-scrollbar {
+  width: 10px;
+}
+.transcript::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background);
+  border-radius: 5px;
+}
+.transcript::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+.empty-state {
+  margin: auto;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  max-width: 320px;
+  padding: 24px 12px;
+}
+.empty-icon {
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.7;
+  margin-bottom: 12px;
+}
+.empty-state h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: var(--vscode-foreground);
+}
+.empty-state p {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ---------- Council activity ---------- */
+
+.activity-card {
+  align-self: stretch;
+  border: 1px solid var(--vscode-panel-border, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--vscode-input-background, var(--vscode-editor-background)) 86%, transparent);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.activity-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.activity-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.activity-phase,
+.activity-summary,
+.activity-context,
+.activity-meta {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.activity-context {
+  text-align: right;
+  white-space: nowrap;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-lanes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.activity-lane {
+  border: 1px solid var(--vscode-panel-border, transparent);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--vscode-editor-background);
+  min-width: 0;
+}
+
+.activity-lane-top,
+.activity-lane-name,
+.activity-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.activity-lane-top {
+  justify-content: space-between;
+}
+
+.activity-lane-name {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.activity-status {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: var(--vscode-badge-foreground);
+  background: var(--vscode-badge-background);
+  white-space: nowrap;
+}
+
+.status-limited .activity-status,
+.status-failed .activity-status {
+  background: color-mix(in srgb, var(--vscode-errorForeground, #f87171) 28%, transparent);
+  color: var(--vscode-errorForeground, #f87171);
+}
+
+.status-done .activity-status {
+  background: color-mix(in srgb, var(--council-codex) 22%, transparent);
+  color: var(--vscode-foreground);
+}
+
+.activity-mission {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--vscode-foreground);
+}
+
+.activity-meta {
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.activity-meta span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+}
+
+.activity-progress {
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 8px 0;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.14));
+}
+
+.activity-progress > div {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--vscode-progressBar-background, var(--vscode-focusBorder));
+  transition: width 180ms ease-out;
+}
+
+.lane-claude .activity-progress > div { background: var(--council-claude); }
+.lane-codex .activity-progress > div { background: var(--council-codex); }
+.status-limited .activity-progress > div,
+.status-failed .activity-progress > div { background: var(--vscode-errorForeground, #f87171); }
+
+.activity-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.activity-steps li {
+  position: relative;
+  padding-left: 16px;
+  font-size: 10.8px;
+  line-height: 1.35;
+  color: var(--vscode-descriptionForeground);
+}
+
+.activity-steps li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.45em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  opacity: 0.7;
+}
+
+.activity-steps .step-done {
+  color: var(--vscode-foreground);
+}
+
+.activity-steps .step-done::before {
+  background: currentColor;
+}
+
+.activity-steps .step-running {
+  color: var(--vscode-foreground);
+  font-weight: 500;
+}
+
+.activity-steps .step-running::before {
+  background: currentColor;
+  animation: pulseStep 1s ease-in-out infinite;
+}
+
+.activity-steps .step-blocked {
+  color: var(--vscode-errorForeground, #f87171);
+}
+
+.activity-steps .step-skipped {
+  text-decoration: line-through;
+  opacity: 0.65;
+}
+
+@keyframes pulseStep {
+  0%, 100% { transform: scale(0.9); opacity: 0.55; }
+  50% { transform: scale(1.25); opacity: 1; }
+}
+
+@media (max-width: 560px) {
+  .activity-lanes {
+    grid-template-columns: 1fr;
+  }
+  .activity-header {
+    flex-direction: column;
+  }
+  .activity-context {
+    max-width: 100%;
+    text-align: left;
+  }
+}
+
+/* ---------- Bubble ---------- */
+
+.bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 92%;
+  align-self: flex-start;
+}
+
+.bubble.user {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.bubble-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--vscode-descriptionForeground);
+  padding: 0 4px;
+}
+
+.bubble-header .dot {
+  width: 7px;
+  height: 7px;
+}
+
+.bubble-header .role-tag {
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+}
+
+.bubble-header .spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  opacity: 0.7;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Model badge — small monospace chip in the bubble header showing which
+   model is powering this call. Empty until the orchestrator emits an
+   agent-model event (one fires up-front with the configured value or
+   "(CLI default)", then a second fires later for Claude bubbles once
+   the actual model is parsed out of the stream). */
+.bubble-header .agent-model {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 9.5px;
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--vscode-textCodeBlock-background, rgba(127, 127, 127, 0.12));
+  color: var(--vscode-foreground);
+  opacity: 0.7;
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bubble-header .agent-model:empty {
+  display: none;
+}
+
+/* Live verb that rotates while an agent is working ("Adjudicating...",
+   "Beam-searching..."). Cleared the moment streaming text starts arriving
+   or the agent reports done. Italic + dim so it doesn't fight the agent
+   name visually, and the trailing ellipsis is part of the value (added in
+   ::after so we don't duplicate it on every JS rotation tick). */
+.bubble-header .agent-verb {
+  font-style: italic;
+  opacity: 0.85;
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 10.5px;
+}
+.bubble-header .agent-verb:not(:empty)::after {
+  content: "…";
+  margin-left: 1px;
+  opacity: 0.6;
+}
+
+/* Live elapsed counter — small monospace tick so the user can see the
+   agent is alive (and how long it's costing them). Settles to the final
+   elapsed time once the bubble closes. */
+.bubble-header .agent-counter {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 10px;
+  opacity: 0.6;
+  margin-left: auto; /* pushes counter + spinner to the right edge */
+  white-space: nowrap;
+  max-width: min(340px, 55%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Footer printed below every completed turn. Shows total time + agent count.
+   Centered, dim, monospace digits. */
+.turn-footer {
+  align-self: center;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 10.5px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.7;
+  padding: 6px 10px;
+  margin: 4px 0 8px;
+  border-top: 1px dashed var(--vscode-panel-border, transparent);
+  border-bottom: 1px dashed var(--vscode-panel-border, transparent);
+  width: 100%;
+  max-width: 360px;
+  text-align: center;
+}
+
+.bubble-body {
+  padding: var(--bubble-pad);
+  border-radius: var(--bubble-radius);
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-panel-border, transparent);
+  line-height: 1.55;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.bubble.user .bubble-body {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: transparent;
+}
+
+.bubble.planner .bubble-body {
+  border-left: 3px solid var(--council-planner);
+}
+.bubble.decider .bubble-body {
+  border-left: 3px solid var(--council-decider);
+}
+.bubble.claude .bubble-body {
+  border-left: 3px solid var(--council-claude);
+}
+.bubble.codex .bubble-body {
+  border-left: 3px solid var(--council-codex);
+}
+
+.bubble-body code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12.5px;
+  background: var(--vscode-textCodeBlock-background, rgba(127,127,127,0.15));
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.bubble-body pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: var(--vscode-textCodeBlock-background, rgba(127,127,127,0.15));
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.bubble-body pre code {
+  background: transparent;
+  padding: 0;
+}
+.bubble-body strong { font-weight: 600; }
+.bubble-body em { font-style: italic; }
+.bubble-body a { color: var(--vscode-textLink-foreground); }
+
+.bubble-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.bubble-attachments img {
+  max-width: 140px;
+  max-height: 100px;
+  border-radius: 4px;
+  border: 1px solid var(--vscode-panel-border, transparent);
+}
+
+/* ---------- Composer ---------- */
+
+.composer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--vscode-panel-border, transparent);
+  padding: 10px 12px 12px;
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.attachment-thumb {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 4px;
+  border: 1px solid var(--vscode-panel-border, transparent);
+  overflow: hidden;
+  background: var(--vscode-input-background);
+}
+.attachment-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.attachment-thumb .remove-x {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  line-height: 1;
+}
+
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border, transparent));
+  border-radius: 8px;
+  padding: 6px 6px 6px 8px;
+}
+.composer-row:focus-within {
+  border-color: var(--vscode-focusBorder);
+}
+
+.composer-row textarea {
+  flex: 1;
+  resize: none;
+  border: none;
+  background: transparent;
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  outline: none;
+  padding: 6px 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.icon-btn,
+.send-btn {
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: opacity 120ms, background 120ms;
+}
+.icon-btn:hover,
+.send-btn:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(127,127,127,0.15));
+}
+.send-btn {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  opacity: 1;
+  padding: 7px 9px;
+}
+.send-btn:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+.stop-btn {
+  color: var(--vscode-errorForeground, #f87171);
+}
+.stop-btn:hover {
+  background: color-mix(in srgb, var(--vscode-errorForeground, #f87171) 14%, transparent);
+}
+.send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.composer-hint {
+  margin-top: 6px;
+  font-size: 10.5px;
+  color: var(--vscode-descriptionForeground);
+  text-align: right;
+}
+.composer-hint kbd {
+  font-family: var(--vscode-editor-font-family, monospace);
+  background: var(--vscode-keybindingLabel-background, rgba(127,127,127,0.2));
+  border: 1px solid var(--vscode-keybindingLabel-border, transparent);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 10px;
+}

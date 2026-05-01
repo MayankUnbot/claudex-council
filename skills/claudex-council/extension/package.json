@@ -1,0 +1,271 @@
+{
+  "name": "claudex-council",
+  "displayName": "Claudex Council",
+  "description": "Two coding agents, one verdict. Claude routes, Codex responds, you get a synthesized answer — all in a chat panel inside VS Code.",
+  "version": "0.5.16",
+  "publisher": "claudex-council",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claudexCouncil",
+          "title": "Claudex Council",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "claudexCouncil": [
+        {
+          "id": "claudexCouncil.sessions",
+          "name": "Sessions",
+          "icon": "media/icon.svg",
+          "contextualTitle": "Claudex Council"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "claudexCouncil.sessions",
+        "contents": "No council sessions open.\n[+ New Council Session](command:claudexCouncil.newSession)\n\nEach session is an independent conversation. Open as many as you want — they run in parallel."
+      }
+    ],
+    "commands": [
+      {
+        "command": "claudexCouncil.newSession",
+        "title": "New Council Session",
+        "category": "Claudex Council",
+        "icon": "$(add)"
+      },
+      {
+        "command": "claudexCouncil.openPanel",
+        "title": "Open Sessions Panel",
+        "category": "Claudex Council"
+      },
+      {
+        "command": "claudexCouncil.focusSession",
+        "title": "Focus Session",
+        "category": "Claudex Council"
+      },
+      {
+        "command": "claudexCouncil.clearActiveSession",
+        "title": "Clear Active Conversation",
+        "category": "Claudex Council",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "claudexCouncil.refreshModels",
+        "title": "Refresh Available Models (probe account)",
+        "category": "Claudex Council",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "claudexCouncil.newSession",
+          "when": "view == claudexCouncil.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "claudexCouncil.refreshModels",
+          "when": "view == claudexCouncil.sessions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "claudexCouncil.clearActiveSession",
+          "when": "view == claudexCouncil.sessions",
+          "group": "navigation@3"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "claudexCouncil.focusSession",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Claudex Council",
+      "properties": {
+        "claudexCouncil.claudeBinary": {
+          "type": "string",
+          "default": "claude",
+          "description": "Path to the Claude Code CLI binary. Leave as 'claude' if it's on PATH."
+        },
+        "claudexCouncil.codexHelperPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to ask_codex.py. If empty, the extension resolves it from the bundled skill folder."
+        },
+        "claudexCouncil.codexBinary": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path or command name for the Codex CLI. Leave empty to search PATH plus common macOS/Linux/Windows install locations."
+        },
+        "claudexCouncil.workingDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Working directory for agent invocations. If empty, uses the first workspace folder."
+        },
+        "claudexCouncil.pythonBinary": {
+          "type": "string",
+          "default": "",
+          "description": "Path to python interpreter for the Codex helper. If empty, defaults to 'python3' on macOS/Linux and 'python' on Windows."
+        },
+        "claudexCouncil.economyMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use only the Claude worker per turn (skips Codex worker and the synthesis call). Recommended for users on free-tier accounts who hit quota limits — drops cost to ~30% of normal."
+        },
+        "claudexCouncil.councilFidelity": {
+          "type": "string",
+          "default": "fast",
+          "enum": [
+            "fast",
+            "full-fidelity"
+          ],
+          "enumDescriptions": [
+            "Speed/cost profile. Claude worker tools/MCP/skills are disabled; Codex runs read-only with web/MCP/user config disabled.",
+            "Capability profile. Claude keeps normal Claude Code tools/MCP/skills/memory context; Codex loads the user's normal Codex config with web/MCP available unless restricted by the sandbox settings below."
+          ],
+          "description": "Capability profile for council turns. Use 'full-fidelity' when you want both agents to keep their native tool/config surface; use 'fast' when latency and cost matter more."
+        },
+        "claudexCouncil.coordinatorMode": {
+          "type": "string",
+          "default": "local",
+          "enum": [
+            "model",
+            "local"
+          ],
+          "description": "Coordinator behavior for full-council turns. 'local' (default) uses the deterministic router — instant, free, and good enough for the vast majority of routing decisions. 'model' runs a real coordinator model (~25-30s on Opus, ~5-8s on Haiku) for richer routing on complex prompts. Switch to 'model' only if the local router's routing decisions consistently disappoint you."
+        },
+        "claudexCouncil.coordinatorModel": {
+          "type": "string",
+          "default": "",
+          "description": "Claude model used for the coordinator call. Empty = per-session dropdown default. Recommended: claude-sonnet-4-6 for high-quality task decomposition; Haiku is cheaper but weaker for complex coordination."
+        },
+        "claudexCouncil.deliberationMode": {
+          "type": "string",
+          "default": "off",
+          "enum": [
+            "auto",
+            "always",
+            "off"
+          ],
+          "description": "Controls the Claude<->Codex peer-review round before final synthesis. Default 'off' keeps turns fast. Use 'auto' or 'always' only when you want an extra deliberation pass and can tolerate the added latency."
+        },
+        "claudexCouncil.smartModelRouting": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let the Council choose faster or stronger models per lane when the session is still using default model selections. Explicit dropdown choices are respected."
+        },
+        "claudexCouncil.orchestrationVisibility": {
+          "type": "string",
+          "default": "final-only",
+          "enum": [
+            "final-only",
+            "answers",
+            "detailed"
+          ],
+          "description": "Controls how much internal council work is shown in the chat. 'final-only' shows one unified Council response while hiding coordinator, worker, and review internals; 'answers' shows worker answers and the Council response; 'detailed' shows every internal council bubble."
+        },
+        "claudexCouncil.sessionContextMaxChars": {
+          "type": "number",
+          "default": 48000,
+          "minimum": 0,
+          "maximum": 500000,
+          "description": "Maximum characters of prior per-session context injected into coordinator, worker, review, and Council-answer prompts. Includes session metadata, model selections, and recent turn-grouped transcript. The full transcript remains persisted for restore; set 0 to disable prompt context."
+        },
+        "claudexCouncil.sessionMemoryMaxChars": {
+          "type": "number",
+          "default": 48000,
+          "minimum": 0,
+          "maximum": 500000,
+          "deprecationMessage": "Use claudexCouncil.sessionContextMaxChars instead.",
+          "description": "Deprecated alias for claudexCouncil.sessionContextMaxChars."
+        },
+        "claudexCouncil.claudeFullFidelityPermissionMode": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "auto",
+            "bypassPermissions",
+            "dontAsk",
+            "plan"
+          ],
+          "description": "Claude Code permission mode used only when councilFidelity is 'full-fidelity'. Set to 'plan' for Claude Plan Mode behavior, or 'bypassPermissions' only in trusted sandboxes."
+        },
+        "claudexCouncil.codexFullFidelitySandbox": {
+          "type": "string",
+          "default": "workspace-write",
+          "enum": [
+            "inherit",
+            "read-only",
+            "workspace-write",
+            "danger-full-access"
+          ],
+          "description": "Codex sandbox used only when councilFidelity is 'full-fidelity'. 'inherit' leaves your Codex config/default untouched; 'danger-full-access' gives broader filesystem access."
+        },
+        "claudexCouncil.codexFullFidelityBypassApprovalsAndSandbox": {
+          "type": "boolean",
+          "default": false,
+          "description": "Only for councilFidelity='full-fidelity': pass Codex's dangerous bypass flag. Use only when the surrounding environment is already trusted."
+        },
+        "claudexCouncil.cavemanMode": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "off",
+            "lite",
+            "full",
+            "ultra",
+            "wenyan-lite",
+            "wenyan-full",
+            "wenyan-ultra"
+          ],
+          "description": "Compression style for Claude worker output. 'auto' enables full Caveman compression only when the caveman skill is installed; synthesis stays normal English."
+        },
+        "claudexCouncil.claudeWorkerModel": {
+          "type": "string",
+          "default": "",
+          "description": "Claude model used for the worker call (the purple bubble). Empty = per-session dropdown default. Common values: sonnet (latest Sonnet alias), opus (latest Opus alias), claude-sonnet-4-6, claude-haiku-4-5. Any model name your claude CLI supports works."
+        },
+        "claudexCouncil.codexWorkerModel": {
+          "type": "string",
+          "default": "",
+          "description": "Codex model used for the worker call (the green bubble). Empty = whatever the Codex CLI picks by default. Common values: gpt-5-codex (default Codex), gpt-5-codex-spark (faster reasoning), gpt-5, o3. Any model name your `codex` CLI supports works."
+        },
+        "claudexCouncil.deciderModel": {
+          "type": "string",
+          "default": "",
+          "description": "Claude or Codex model used for the Council answer synthesis call. Empty = per-session dropdown default. Default is claude-haiku-4-5 for low latency; use claude-sonnet-4-6 when you want stronger but slower synthesis."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "npx --yes @vscode/vsce package --out claudex-council.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

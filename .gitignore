@@ -1,0 +1,35 @@
+# dependencies
+node_modules/
+bun.lock
+
+# OS
+.DS_Store
+Thumbs.db
+
+# build artifacts
+out/
+dist/
+*.vsix
+
+# local tool state (do not commit — contains user-specific config / IDs)
+.claude/
+.codex-test/
+.tmp-codex-home/
+debug.log
+
+# generated reports / session logs (contain prompts, paths, session IDs)
+reports/
+claudex-council-session.pdf
+screenshot.png
+skills/claudex-council/scripts/benchmark_out/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# editor
+.vscode/
+.idea/
+*.swp

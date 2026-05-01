@@ -1,0 +1,17 @@
+{
+  "name": "claude-channel-codex-bridge",
+  "version": "0.2.0",
+  "license": "MIT",
+  "type": "module",
+  "bin": "./server.ts",
+  "scripts": {
+    "start": "bun server.ts",
+    "setup": "bun install --no-summary"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.10"
+  }
+}
