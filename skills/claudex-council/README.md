@@ -157,6 +157,34 @@ The fake auth matrix is covered by `node skills/claudex-council/test/auth-matrix
 
 ## Install
 
+### Option 0 — Windows one-command setup
+
+For a fresh Windows machine, run the bootstrap script from the repo root:
+
+```powershell
+git clone https://github.com/MayankUnbot/claudex-council.git
+cd claudex-council
+powershell -ExecutionPolicy Bypass -File .\skills\claudex-council\scripts\install-windows.ps1
+```
+
+It automates the setup that otherwise causes most first-run friction:
+
+- installs portable Node.js when `node`/`npm` are missing
+- installs Python when `python` is missing
+- installs the Claude Code and Codex CLIs through npm
+- builds, packages, and installs the VSIX into VS Code
+- pins `claudexCouncil.claudeBinary`, `claudexCouncil.codexBinary`, and `claudexCouncil.pythonBinary` in VS Code settings
+- copies `node.exe` next to npm's Windows shims so `codex.cmd` works even when VS Code was launched before PATH changed
+
+The script cannot finish account login for you. After it completes, run:
+
+```powershell
+claude login
+codex login
+```
+
+Then reload VS Code. To test both lanes, use a real review/plan/debug prompt or include `full council` in the prompt; quick greetings intentionally skip Codex to save quota.
+
 ### Option 1 — Install from VSIX (recommended for now)
 
 Download the latest `claudex-council.vsix` from the [Releases](../../releases) page, then:
@@ -197,7 +225,8 @@ code --install-extension claudex-council.vsix --force
 ### Windows-specific notes
 
 - Use `code.cmd`, not `code`, when passing CLI flags from any shell. Bare `code` on Windows opens VS Code and ignores `--install-extension`.
-- The `codex` CLI on Windows is installed as `codex.cmd` (npm global). The extension resolves this via `shutil.which()` so no manual path config is needed.
+- The `codex` CLI on Windows is installed as `codex.cmd` (npm global). The extension searches `%APPDATA%\npm`, common Node/Python install folders, and the bootstrap script's `~/Tools` folder so a Start-menu-launched VS Code can still find the CLIs.
+- If a trivial prompt says "Codex skipped," that is normally the cost-saving router. Use a substantive review/plan/debug prompt or mention `full council` to force both lanes for testing.
 
 ## Use
 

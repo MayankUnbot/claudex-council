@@ -46,6 +46,10 @@
 - Added cross-platform confidence notes for Windows/macOS parity and linked the verification matrix.
 - Rewrote the account-limits section for free, Plus/Pro, Max/API, and team users, including budget-safe settings and upstream docs links.
 - Clarified that Max/Pro-level quota is not required, but full Council value requires both Claude and Codex CLIs to be installed, signed in, and currently within quota.
+- Added a Windows bootstrap path that minimizes fresh-machine setup friction.
+
+### Added
+- `scripts/install-windows.ps1` to automate per-user Node/Python fallback installs, Claude/Codex CLI installs, VSIX build/install, npm-shim hardening, and VS Code binary settings.
 
 ### Testing
 - Added a root GitHub Actions workflow that builds, packages, and runs fake Claude/Codex smoke tests on macOS, Windows, and Ubuntu.
@@ -55,6 +59,8 @@
 ### Fixed
 - Missing CLI and expired-login failures now classify as install/login guidance instead of generic lane failures.
 - When the default synthesis provider is unavailable but the other worker succeeded, the Council now returns the successful lane directly instead of adding a noisy synthesis failure.
+- Child processes now augment PATH with common Windows Node/npm/Python locations, fixing the case where `codex.cmd` is found but cannot locate `node.exe` because VS Code was launched before PATH changed.
+- Explicit `full council`, `codex lane`, or `test codex` prompts now bypass the quick-prompt fast path so users can verify both lanes without crafting a large task.
 
 ## [0.5.12] - 2026-05-01
 

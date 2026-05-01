@@ -316,7 +316,7 @@ function runProbe(command: string, args: string[], stdin: string): Promise<Probe
     try {
       proc = spawn(resolveBinary(command) || command, args, {
         shell: process.platform === "win32",
-        env: process.env,
+        env: buildProbeEnv(),
         windowsHide: true,
         detached: process.platform !== "win32",
       });
@@ -406,7 +406,10 @@ function resolveBinary(name: string): string | null {
     process.platform === "win32"
       ? (process.env.PATHEXT || ".CMD;.EXE;.BAT").split(";")
       : [""];
-  const dirs = (process.env.PATH || "").split(path.delimiter).filter(Boolean);
+  const dirs = [
+    ...(process.env.PATH || "").split(path.delimiter).filter(Boolean),
+    ...getExtraBinaryDirs(),
+  ];
 
   if (process.platform === "darwin") {
     dirs.push(
@@ -425,8 +428,8 @@ function resolveBinary(name: string): string | null {
       "/usr/bin"
     );
   } else if (process.platform === "win32") {
-    const appdata = process.env.APPDATA;
-    if (appdata) dirs.push(path.join(appdata, "npm"));
+    // Windows fallback dirs are returned by getExtraBinaryDirs() so probes
+    // and child-process PATH use the same assumptions.
   }
 
   for (const dir of dirs) {
@@ -440,6 +443,77 @@ function resolveBinary(name: string): string | null {
     }
   }
   return null;
+}
+
+function buildProbeEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const pathKey = Object.keys(env).find((k) => k.toLowerCase() === "path") || "PATH";
+  env[pathKey] = mergePathDirs(String(env[pathKey] || ""), getExtraBinaryDirs());
+  if (process.platform === "win32" && !env.PATHEXT) {
+    env.PATHEXT = ".COM;.EXE;.BAT;.CMD;.PS1";
+  }
+  return env;
+}
+
+function mergePathDirs(current: string, extraDirs: string[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of [...current.split(path.delimiter), ...extraDirs]) {
+    const dir = raw.trim();
+    if (!dir) continue;
+    const key = process.platform === "win32" ? dir.toLowerCase() : dir;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(dir);
+  }
+  return out.join(path.delimiter);
+}
+
+function getExtraBinaryDirs(): string[] {
+  const dirs: string[] = [];
+  const home = os.homedir();
+  const appdata = process.env.APPDATA;
+  const localappdata = process.env.LOCALAPPDATA;
+  const programFiles = process.env.ProgramFiles;
+  const programFilesX86 = process.env["ProgramFiles(x86)"];
+
+  if (process.platform === "win32") {
+    if (appdata) dirs.push(path.join(appdata, "npm"));
+    if (localappdata) {
+      dirs.push(path.join(localappdata, "pnpm"));
+      dirs.push(path.join(localappdata, "Microsoft", "WindowsApps"));
+      addPythonInstallDirs(dirs, path.join(localappdata, "Programs", "Python"));
+    }
+    if (programFiles) dirs.push(path.join(programFiles, "nodejs"));
+    if (programFilesX86) dirs.push(path.join(programFilesX86, "nodejs"));
+    dirs.push(
+      path.join(home, "Tools", "nodejs"),
+      path.join(home, "Tools", "python312"),
+      path.join(home, "Tools", "python312", "Scripts"),
+      path.join(home, "Tools", "python311"),
+      path.join(home, "Tools", "python311", "Scripts"),
+      path.join(home, "Tools", "python310"),
+      path.join(home, "Tools", "python310", "Scripts")
+    );
+  }
+
+  return dirs.filter((dir, index, all) => {
+    if (!dir) return false;
+    const key = process.platform === "win32" ? dir.toLowerCase() : dir;
+    return all.findIndex((d) => (process.platform === "win32" ? d.toLowerCase() : d) === key) === index;
+  });
+}
+
+function addPythonInstallDirs(out: string[], root: string): void {
+  try {
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^Python\d+/i.test(entry.name)) continue;
+      const dir = path.join(root, entry.name);
+      out.push(dir, path.join(dir, "Scripts"));
+    }
+  } catch {
+    /* root missing */
+  }
 }
 
 let emptyMcpConfigPath: string | undefined;

@@ -139,6 +139,14 @@ code.cmd --install-extension claudex-council.vsix --force
 
 Not a code change — this is a docs/UX issue that we surfaced clearly so users don't get confused.
 
+### 7. Windows npm shim PATH hardening (was: `codex.cmd` found, but `node` missing)
+
+**Problem**: on a fresh Windows machine, Node can be installed after VS Code is already running. The extension may find `%APPDATA%\npm\codex.cmd`, but the npm shim itself still needs `node.exe` on PATH. If VS Code inherited the old PATH, Codex fails even though `codex.cmd` exists.
+
+**Fix**: child-process environments now append common per-user Node/npm/Python folders before launching Claude, Codex, Python, or model probes. The Windows bootstrap script also copies `node.exe` next to the npm shims as a belt-and-suspenders fallback.
+
+**File**: [src/orchestrator.ts](extension/src/orchestrator.ts) `buildChildProcessEnv`, [src/modelProber.ts](extension/src/modelProber.ts) `buildProbeEnv`, [scripts/install-windows.ps1](scripts/install-windows.ps1).
+
 ## How to independently verify on a Mac
 
 If you (or a Mac user) want to confirm the whole pipeline works end-to-end, here's the full test you can run after installing on a Mac:

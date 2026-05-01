@@ -93,7 +93,26 @@ Works on **macOS**, **Linux**, and **Windows**. Process spawning, binary resolut
 
 ## Install
 
-### From source (current path)
+### Windows one-command setup
+
+On a fresh Windows machine, this script handles the boring parts: Node/Python fallback installs, Claude/Codex CLI install, VSIX build/install, npm-shim PATH hardening, and VS Code binary settings.
+
+```powershell
+git clone https://github.com/MayankUnbot/claudex-council.git
+cd claudex-council
+powershell -ExecutionPolicy Bypass -File .\skills\claudex-council\scripts\install-windows.ps1
+```
+
+After it finishes, complete the interactive logins:
+
+```powershell
+claude login
+codex login
+```
+
+Then reload VS Code. If you want to test both lanes, use a real review/plan/debug prompt or include `full council` in the prompt; quick greetings intentionally skip Codex to save quota.
+
+### Manual source build
 
 ```bash
 git clone https://github.com/MayankUnbot/claudex-council.git
@@ -200,13 +219,9 @@ The root files (`codex-mcp.ts`, `server.ts`, `.mcp.json`, `.claude-plugin/`, `ar
 
 ## Roadmap (next)
 
-- Auth-failure detection that catches real CLI strings (`Invalid API key`, `not signed in`, etc.) and surfaces the remediation command (`claude login` / `codex login`) inline
-- `claude auth status` / Codex equivalent pre-flight on session creation
-- `CLAUDE_CODE_OAUTH_TOKEN` env var support for headless/CI/locked-down environments
-- Auth-failure cooldown so successive turns don't re-burn 60s on the same broken CLI
+- First-run health panel that shows Claude/Codex/Python/Node/auth status inside VS Code.
 - "Plan Mode" composer toggle: first turn = full council, follow-up turns = solo for fast iteration
-- Mac binary-resolution fallback for `pnpm`-installed Codex (`~/Library/pnpm`)
-- Linux fallback for `~/.cargo/bin` and `/snap/bin`
+- Published GitHub Actions workflow once the pushing token has `workflow` scope.
 - Conditional synthesis: skip the synthesizer call when worker briefs already agree
 
 ## License

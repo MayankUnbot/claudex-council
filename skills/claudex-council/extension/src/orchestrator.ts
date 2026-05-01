@@ -3457,7 +3457,7 @@ function getSpawnOptions(cwd: string, opts: { fullFidelity?: boolean } = {}) {
   // remote servers, or company-locked Macs where browser login is
   // blocked. We don't read or set the token ourselves; the inherit
   // here is what makes it work.
-  const env = { ...process.env };
+  const env = buildChildProcessEnv();
   if (!opts.fullFidelity) {
     env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1";
     env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS = "1";
@@ -3526,7 +3526,10 @@ function resolveBinary(name: string): string | null {
     process.platform === "win32"
       ? (process.env.PATHEXT || ".CMD;.EXE;.BAT").split(";")
       : [""];
-  const dirs = (process.env.PATH || "").split(path.delimiter).filter(Boolean);
+  const dirs = [
+    ...(process.env.PATH || "").split(path.delimiter).filter(Boolean),
+    ...getExtraBinaryDirs(),
+  ];
 
   // Add well-known fallback dirs that GUI VS Code on macOS / Linux often
   // misses. Order matters — Apple Silicon Homebrew first since it's the
@@ -3554,10 +3557,8 @@ function resolveBinary(name: string): string | null {
       "/usr/bin"
     );
   } else if (process.platform === "win32") {
-    const appdata = process.env.APPDATA;
-    if (appdata) dirs.push(path.join(appdata, "npm"));
-    const localappdata = process.env.LOCALAPPDATA;
-    if (localappdata) dirs.push(path.join(localappdata, "pnpm"));
+    // Windows fallback dirs are returned by getExtraBinaryDirs() so child
+    // process PATH and binary lookup stay in sync.
   }
 
   for (const dir of dirs) {
@@ -3606,6 +3607,7 @@ export async function probeClaudeAuth(): Promise<
     try {
       proc = spawn(binary, ["auth", "status", "--text"], {
         shell: process.platform === "win32",
+        env: buildChildProcessEnv(),
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -3649,6 +3651,77 @@ export async function probeClaudeAuth(): Promise<
       }
     });
   });
+}
+
+function buildChildProcessEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  const pathKey = Object.keys(env).find((k) => k.toLowerCase() === "path") || "PATH";
+  env[pathKey] = mergePathDirs(String(env[pathKey] || ""), getExtraBinaryDirs());
+  if (process.platform === "win32" && !env.PATHEXT) {
+    env.PATHEXT = ".COM;.EXE;.BAT;.CMD;.PS1";
+  }
+  return env;
+}
+
+function mergePathDirs(current: string, extraDirs: string[]): string {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of [...current.split(path.delimiter), ...extraDirs]) {
+    const dir = raw.trim();
+    if (!dir) continue;
+    const key = process.platform === "win32" ? dir.toLowerCase() : dir;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(dir);
+  }
+  return out.join(path.delimiter);
+}
+
+function getExtraBinaryDirs(): string[] {
+  const dirs: string[] = [];
+  const home = os.homedir();
+  const appdata = process.env.APPDATA;
+  const localappdata = process.env.LOCALAPPDATA;
+  const programFiles = process.env.ProgramFiles;
+  const programFilesX86 = process.env["ProgramFiles(x86)"];
+
+  if (process.platform === "win32") {
+    if (appdata) dirs.push(path.join(appdata, "npm"));
+    if (localappdata) {
+      dirs.push(path.join(localappdata, "pnpm"));
+      dirs.push(path.join(localappdata, "Microsoft", "WindowsApps"));
+      addPythonInstallDirs(dirs, path.join(localappdata, "Programs", "Python"));
+    }
+    if (programFiles) dirs.push(path.join(programFiles, "nodejs"));
+    if (programFilesX86) dirs.push(path.join(programFilesX86, "nodejs"));
+    dirs.push(
+      path.join(home, "Tools", "nodejs"),
+      path.join(home, "Tools", "python312"),
+      path.join(home, "Tools", "python312", "Scripts"),
+      path.join(home, "Tools", "python311"),
+      path.join(home, "Tools", "python311", "Scripts"),
+      path.join(home, "Tools", "python310"),
+      path.join(home, "Tools", "python310", "Scripts")
+    );
+  }
+
+  return dirs.filter((dir, index, all) => {
+    if (!dir) return false;
+    const key = process.platform === "win32" ? dir.toLowerCase() : dir;
+    return all.findIndex((d) => (process.platform === "win32" ? d.toLowerCase() : d) === key) === index;
+  });
+}
+
+function addPythonInstallDirs(out: string[], root: string): void {
+  try {
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^Python\d+/i.test(entry.name)) continue;
+      const dir = path.join(root, entry.name);
+      out.push(dir, path.join(dir, "Scripts"));
+    }
+  } catch {
+    /* root missing */
+  }
 }
 
 function findCavemanSkillPath(): string | undefined {
@@ -3854,6 +3927,7 @@ function decideRoute(
 ): DeciderRoute {
   const trimmed = prompt.trim();
   const hasAttachments = attachments.length > 0;
+  const forceFullCouncil = explicitlyRequestsFullCouncil(trimmed);
 
   if (economyMode) {
     return makeRoute({
@@ -3873,17 +3947,17 @@ function decideRoute(
     });
   }
 
-  if (isTrivialPrompt(prompt) && !hasAttachments) {
+  if (!forceFullCouncil && isTrivialPrompt(prompt) && !hasAttachments) {
     return makeRoute({
       mode: "claude-only",
       fidelity,
-      reason: "quick conversational prompt",
+      reason: "quick conversational prompt; Codex skipped to save quota",
       confidence: "high",
       runCodex: false,
       runSynthesis: false,
       fastClaude: true,
       planText:
-        "Route: Claude only. Starting Claude now for a quick conversational reply.",
+        "Route: Claude only. Starting Claude now for a quick conversational reply. Codex is skipped to save quota; ask for a review, plan, debug task, or mention 'full council' to run both lanes.",
       prompt,
       claudeRole:
         "Give a short, warm, direct reply. Do not over-explain or mention the council routing.",
@@ -3891,17 +3965,17 @@ function decideRoute(
     });
   }
 
-  if (isLightDirectPrompt(trimmed) && !hasAttachments) {
+  if (!forceFullCouncil && isLightDirectPrompt(trimmed) && !hasAttachments) {
     return makeRoute({
       mode: "claude-only",
       fidelity,
-      reason: "quick direct answer",
+      reason: "quick direct answer; Codex skipped to save quota",
       confidence: "medium",
       runCodex: false,
       runSynthesis: false,
       fastClaude: false,
       planText:
-        "Route: Claude only. Starting Claude now because this looks like a quick direct answer; heavier tasks still run the full council.",
+        "Route: Claude only. Starting Claude now because this looks like a quick direct answer. Codex is skipped to save quota; ask for a review, plan, debug task, or mention 'full council' to run both lanes.",
       prompt,
       claudeRole:
         "Answer directly and concisely. Use the project context only if it is clearly relevant.",
@@ -3909,7 +3983,9 @@ function decideRoute(
     });
   }
 
-  const taskType = classifyTaskType(trimmed, hasAttachments);
+  const taskType = forceFullCouncil
+    ? "explicit full-council request"
+    : classifyTaskType(trimmed, hasAttachments);
   const confidence = taskType === "ambiguous task" ? "low" : "high";
   return makeRoute({
     mode: "full-council",
@@ -3977,6 +4053,21 @@ function describeCapabilityProfile(fidelity: CouncilFidelity): string {
     "Capability profile: Fast council.",
     "Claude/Codex startup is trimmed for speed; Codex runs read-only with web/MCP/user config disabled, and Claude worker tools are disabled.",
   ].join(" ");
+}
+
+function explicitlyRequestsFullCouncil(prompt: string): boolean {
+  const lower = prompt.toLowerCase();
+  return [
+    "full council",
+    "run both",
+    "use both",
+    "both agents",
+    "claude and codex",
+    "codex lane",
+    "run codex",
+    "test codex",
+    "council mode",
+  ].some((phrase) => lower.includes(phrase));
 }
 
 function makeFallbackCoordinatorPlan(route: DeciderRoute, rawText?: string): CoordinatorPlan {
